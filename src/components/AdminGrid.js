@@ -1,55 +1,149 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Button, Col, Container, Input, InputGroup, Row } from 'reactstrap'
+import DataTable from 'react-data-table-component'
 import axios from 'axios'
-import Cookies from 'universal-cookie/lib'
+import styled from 'styled-components'
 
-const LoginForm = (props) => {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+const TextField = styled.input`
+  height: 32px;
+  width: 300px;
+  border-radius: 3px;
+  border-top-left-radius: 5px;
+  border-bottom-left-radius: 5px;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border: 1px solid #e5e5e5;
+  padding: 0 32px 0 16px;
 
-  const handleChange = (e) => {
-    switch (e.target.name) {
-      case 'email':
-        setEmail(e.target.value)
-        break
-      case 'password':
-        setPassword(e.target.value)
-        break
-    }
+  &:hover {
+    cursor: pointer;
+  }
+`
+
+const FilterComponent = ({ filterText, onFilter, onClear }) => (
+  <>
+    <TextField id="search" type="text" placeholder="Short-Code/Origin Url" aria-label="Search Input" value={filterText}
+               onChange={onFilter}/>
+  </>
+)
+
+const AdminGrid = (props) => {
+  const [data, setData] = useState(undefined)
+  const [filterText, setFilterText] = useState('')
+  const [resetPaginationToggle, setResetPaginationToggle] = React.useState(false)
+  const [totalRows, setTotalRows] = useState(0)
+  const [perPage, setPerPage] = useState(10)
+  const [sortBy, setSortBy] = useState('created_at')
+  const [order, setOrder] = useState('desc')
+
+  const handlePageChange = page => {
+    fetchData(page)
   }
 
-  const login = (e) => {
-    axios.post(`http://localhost/api/login`, { email, password }).then((res) => {
-      props.setToken(res.data.data.api_token)
-      console.log(res.data.data.api_token);
-      const cookies = new Cookies()
-      cookies.set('token', res.data.data.api_token, { path: '/' })
-    }).catch((err) => {
-      alert(err)
+  const handlePerRowsChange = async (newPerPage, page) => {
+    fetchData(page, newPerPage)
+    setPerPage(newPerPage)
+  }
+  const handleSort = (column, sortDirection) => {
+    // simulate server sort
+
+    // instead of setTimeout this is where you would handle your API call.
+    fetchData(1, null, null, column.selector, sortDirection)
+    setSortBy(column.selector)
+    setOrder(sortDirection)
+  }
+
+  const fetchData = (page = null, newPerPage = null, searchTerm = null, newSortBy = null, newOrder = null) => {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + props.token
+    }
+    const encodedSearchTerm = encodeURIComponent(searchTerm !== null ? searchTerm : filterText)
+    axios.get(`http://localhost/api/urls?page=${page}&perPage=${newPerPage !== null ? newPerPage : perPage}&searchTerm=${encodedSearchTerm}&sortBy=${newSortBy !== null ? newSortBy : sortBy}&order=${newOrder !== null ? newOrder : order}`, { headers }).then((res) => {
+      setData(res.data.data.urls.data)
+      setTotalRows(res.data.data.urls.total)
+      if (newPerPage) {
+        setPerPage(newPerPage)
+      }
     })
   }
 
+  useEffect(() => {
+    if (!data) {
+      fetchData(1)
+    }
+  })
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer ' + props.token
+  }
+
+  const subHeaderComponentMemo = React.useMemo(() => {
+
+    const onFilter = (e) => {
+      setFilterText(e.target.value)
+      fetchData(1, perPage, e.target.value)
+    }
+    return <FilterComponent onFilter={onFilter}
+                            filterText={filterText}/>
+  }, [filterText, resetPaginationToggle])
+
+  const handleDelete = (value) => {
+
+    axios.delete('http://localhost/api/urls/' + value, { headers }).then((res) => {
+      fetchData()
+    })
+  }
+
+  const columns = useMemo(() => [
+    {
+      name: 'Short Code',
+      selector: 'code',
+
+    },
+    {
+      name: 'Full Url',
+      selector: 'origin',
+
+    },
+    {
+      name: 'Expiry',
+      selector: 'expiry',
+      sortable: true,
+    },
+    {
+      name: 'Number of hits',
+      selector: 'hit',
+      sortable: true,
+    },
+    {
+      name: 'Created At',
+      selector: 'created_at',
+    },
+    {
+      cell: (row) => <Button variant="contained" onClick={() => handleDelete(row.id)} color="danger">Delete</Button>,
+      selector: 'id',
+      button: true,
+    }
+  ])
   return (<Container>
-    <Col md={{ size: 4, offset: 4 }}>
-      <label>LOGIN</label>
-      <Row>
-        <InputGroup>
-          <Input placeholder="email" name="email" value={email} onChange={handleChange}/>
-        </InputGroup>
-      </Row>
-      <br/>
-      <Row>
-        <InputGroup>
-          <Input type="password" placeholder="password" value={password} name="password" onChange={handleChange}/>
-        </InputGroup>
-      </Row>
-      <br/>
-      <Row>
-        <Button onClick={login} color="primary">Login</Button>
-      </Row>
-    </Col>
+    <DataTable
+      title="URLS"
+      data={data}
+      columns={columns}
+      subHeader
+      pagination
+      subHeaderComponent={subHeaderComponentMemo}
+      paginationServer
+      paginationTotalRows={totalRows}
+      onChangeRowsPerPage={handlePerRowsChange}
+      onChangePage={handlePageChange}
+      onSort={handleSort}
+      sortServer
+    />
   </Container>)
 
 }
 
-export default LoginForm
+export default AdminGrid
